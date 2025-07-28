@@ -1,6 +1,6 @@
 /**
  * @fileoverview Core alert detection engine for sprint intelligence
- * @lastmodified 2025-07-28T15:35:00Z
+ * @lastmodified 2025-07-28T08:15:29Z
  * 
  * Features: Multi-type alert detection, configurable thresholds, batch processing, performance optimization
  * Main APIs: Alert detection, threshold management, alert lifecycle, notification triggering
@@ -188,7 +188,17 @@ export class AlertDetectionService extends BaseService {
   }
 
   /**
-   * Process issue for alert detection
+   * Process individual issue for alert detection across all enabled rules
+   * 
+   * Evaluates each alert rule against the issue and creates/resolves alerts as needed.
+   * Handles three types of changes: created (new issue), updated (field changes), 
+   * and deleted (issue removal - resolves all alerts).
+   * 
+   * @param organizationId - Organization identifier for rule filtering
+   * @param issue - JIRA issue to evaluate
+   * @param changeType - Type of change that triggered processing
+   * @param changelog - Optional change history for update events
+   * @returns Array of newly detected alerts
    */
   async processIssueAlerts(
     organizationId: string,
@@ -268,7 +278,16 @@ export class AlertDetectionService extends BaseService {
   }
 
   /**
-   * Process sprint-level alerts
+   * Process sprint-level alerts for time-sensitive sprint conditions
+   * 
+   * Evaluates sprint progress and time remaining to detect issues that may
+   * not complete on time or are completing early. Only processes rules for
+   * 'running_out_of_time' and 'early_completion' alert types.
+   * 
+   * @param organizationId - Organization identifier for rule filtering
+   * @param sprint - Sprint to evaluate for time-based alerts
+   * @param issues - All issues in the sprint to check
+   * @returns Array of newly detected sprint-level alerts
    */
   async processSprintAlerts(
     organizationId: string,
@@ -313,7 +332,14 @@ export class AlertDetectionService extends BaseService {
   }
 
   /**
-   * Check if rule applies to issue
+   * Evaluates whether an alert rule should be applied to a specific issue
+   * 
+   * Checks rule conditions (project, issue type, status, assignee, labels) and
+   * filters (exclusions, assignment requirements) to determine rule applicability.
+   * 
+   * @param rule - Alert rule with conditions and filters
+   * @param issue - JIRA issue to evaluate
+   * @returns true if rule applies to the issue, false otherwise
    */
   private doesRuleApplyToIssue(rule: AlertRule, issue: JiraIssue): boolean {
     const { conditions, filters } = rule;
@@ -531,34 +557,69 @@ export class AlertDetectionService extends BaseService {
 
 // === ALERT DETECTOR INTERFACES ===
 
+/**
+ * Base class for all alert detection implementations
+ * 
+ * Defines the contract for alert detectors with methods for triggering,
+ * resolving, and formatting alerts. Each concrete detector implements
+ * specific business logic for their alert type.
+ */
 abstract class AlertDetector {
+  /** Determines if an alert should be triggered for the given issue */
   abstract shouldTrigger(issue: JiraIssue, rule: AlertRule, changelog?: JiraChangeHistory): Promise<boolean>;
+  
+  /** Determines if an existing alert should be automatically resolved */
   abstract shouldResolve(issue: JiraIssue, rule: AlertRule): boolean;
+  
+  /** Generates user-friendly alert title */
   abstract generateTitle(issue: JiraIssue, rule: AlertRule): string;
+  
+  /** Generates detailed alert description with context */
   abstract generateDescription(issue: JiraIssue, rule: AlertRule): string;
+  
+  /** Generates comprehensive alert metadata for tracking and analysis */
   abstract generateMetadata(issue: JiraIssue, rule: AlertRule): Promise<AlertMetadata>;
 
-  // Optional method for sprint-level detection
+  /** Optional method for sprint-level detection (only used by time-based detectors) */
   async shouldTriggerSprint(issue: JiraIssue, sprint: JiraSprint, rule: AlertRule): Promise<boolean> {
     return false;
+  }
+
+  /** Helper method to convert hours to milliseconds */
+  protected hoursToMilliseconds(hours: number): number {
+    return hours * 60 * 60 * 1000;
+  }
+
+  /** Helper method to calculate hours between two dates */
+  protected calculateHoursBetween(startDate: Date, endDate: Date): number {
+    return Math.floor((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60));
   }
 }
 
 // === CONCRETE DETECTOR IMPLEMENTATIONS ===
 
+/**
+ * Detects issues that lack time estimates after a configured period
+ * 
+ * Triggers when issues are missing both time estimates and story points
+ * beyond the threshold hours after creation.
+ */
 class MissingEstimateDetector extends AlertDetector {
   async shouldTrigger(issue: JiraIssue, rule: AlertRule): Promise<boolean> {
-    // Check if issue is missing estimate after threshold time
-    const hasEstimate = issue.fields.timeoriginalestimate || 
-                       issue.fields.customfield_10001; // Story points
+    // Check if issue already has estimate (time or story points)
+    const hasTimeEstimate = Boolean(issue.fields.timeoriginalestimate);
+    const hasStoryPoints = Boolean(issue.fields.customfield_10001);
     
-    if (hasEstimate) return false;
+    if (hasTimeEstimate || hasStoryPoints) {
+      return false;
+    }
 
-    const threshold = rule.thresholds.estimateRequiredAfterHours || 24;
-    const createdTime = new Date(issue.fields.created).getTime();
-    const thresholdTime = threshold * 60 * 60 * 1000; // Convert to ms
+    // Check if threshold time has passed since creation
+    const thresholdHours = rule.thresholds.estimateRequiredAfterHours || 24;
+    const createdTime = new Date(issue.fields.created);
+    const thresholdMs = this.hoursToMilliseconds(thresholdHours);
     
-    return Date.now() - createdTime > thresholdTime;
+    return Date.now() - createdTime.getTime() > thresholdMs;
   }
 
   shouldResolve(issue: JiraIssue, rule: AlertRule): boolean {
@@ -599,25 +660,39 @@ class MissingEstimateDetector extends AlertDetector {
   }
 }
 
+/**
+ * Detects issues in progress that lack time tracking entries
+ * 
+ * Triggers when issues are in development status but have no logged
+ * work time beyond the configured threshold.
+ */
 class MissingTimeTrackingDetector extends AlertDetector {
+  private readonly DEVELOPMENT_STATUSES = ['In Progress', 'In Development', 'In Review'];
+
   async shouldTrigger(issue: JiraIssue, rule: AlertRule): Promise<boolean> {
-    // Check if issue has time logged when in progress
-    const inProgressStatuses = ['In Progress', 'In Development', 'In Review'];
-    const isInProgress = inProgressStatuses.includes(issue.fields.status.name);
+    // Only check issues that are actively being worked on
+    const currentStatus = issue.fields.status.name;
+    const isInDevelopmentPhase = this.DEVELOPMENT_STATUSES.includes(currentStatus);
     
-    if (!isInProgress) return false;
+    if (!isInDevelopmentPhase) {
+      return false;
+    }
 
-    const hasTimeLogged = issue.fields.timespent && issue.fields.timespent > 0;
-    if (hasTimeLogged) return false;
-
-    // Check if been in progress for threshold time
-    const threshold = rule.thresholds.timeTrackingRequiredAfterHours || 8;
-    // Would need to check status change history to get exact time
-    // For now, using updated time as approximation
-    const updatedTime = new Date(issue.fields.updated).getTime();
-    const thresholdTime = threshold * 60 * 60 * 1000;
+    // Skip if time is already being tracked
+    const timeSpentSeconds = issue.fields.timespent || 0;
+    const hasLoggedTime = timeSpentSeconds > 0;
     
-    return Date.now() - updatedTime > thresholdTime;
+    if (hasLoggedTime) {
+      return false;
+    }
+
+    // Check if issue has been in development long enough to require time tracking
+    const thresholdHours = rule.thresholds.timeTrackingRequiredAfterHours || 8;
+    // Note: Using updated time as approximation - ideally would use status change history
+    const lastUpdated = new Date(issue.fields.updated);
+    const thresholdMs = this.hoursToMilliseconds(thresholdHours);
+    
+    return Date.now() - lastUpdated.getTime() > thresholdMs;
   }
 
   shouldResolve(issue: JiraIssue, rule: AlertRule): boolean {
@@ -835,7 +910,7 @@ class MissingPRDetector extends AlertDetector {
       triggerData: {
         field: 'pull_request',
         currentValue: null,
-        changeTime: lastCommitTime,
+        changeTime: lastCommitTime || undefined,
       },
     };
   }
@@ -938,7 +1013,7 @@ class UnmergedPRDetector extends AlertDetector {
       triggerData: {
         field: 'pr_merge_status',
         currentValue: 'open',
-        changeTime: prCreatedTime,
+        changeTime: prCreatedTime || undefined,
       },
     };
   }
@@ -1123,7 +1198,7 @@ class UnansweredMentionDetector extends AlertDetector {
       triggerData: {
         field: 'mention_response',
         currentValue: null,
-        changeTime: mentionTime,
+        changeTime: mentionTime || undefined,
       },
     };
   }

@@ -110,10 +110,20 @@ interface ErrorResponse {
       "constraint": "Must be a positive number"
     },
     "timestamp": "2025-07-28T05:57:35Z",
-    "requestId": "req_abc123def456"
+    "requestId": "req_abc123def456",
+    "suggestion": "Please review the highlighted fields and ensure all required information is provided.",
+    "documentation": "https://docs.sias.example.com/api-reference"
   }
 }
 ```
+
+### Error Response Best Practices
+
+- **Always check the `code` field** for programmatic error handling
+- **Display the `message` to users** for human-readable errors
+- **Use `suggestion` field** to provide actionable next steps
+- **Reference `documentation`** for detailed troubleshooting guides
+- **Log `requestId`** for support ticket correlation
 
 ## 🚦 Rate Limiting
 

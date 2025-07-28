@@ -61,6 +61,18 @@ app.use('*', (req, res) => {
     error: 'Not Found',
     message: `Route ${req.originalUrl} not found`,
     timestamp: new Date().toISOString(),
+    suggestions: [
+      'Check the API documentation for available endpoints',
+      'Verify the HTTP method (GET, POST, PUT, DELETE)',
+      'Ensure you\'re using the correct API version (v1)',
+      'Check for typos in the URL path'
+    ],
+    availableEndpoints: {
+      health: '/health',
+      apiStatus: '/api/v1/status',
+      documentation: 'https://docs.sias.example.com/api-reference'
+    },
+    supportContact: 'support@sias.example.com'
   });
 });
 

@@ -57,7 +57,7 @@ export const createMockRequest = (overrides: any = {}) => ({
   query: {},
   body: {},
   headers: {},
-  user: null,
+  user: undefined,
   ip: '127.0.0.1',
   method: 'GET',
   path: '/test',
@@ -87,11 +87,17 @@ export const createTestUser = (overrides: any = {}) => ({
 
 export const createTestAlert = (overrides: any = {}) => ({
   id: 'test-alert-id',
-  type: 'missing_estimate',
+  alertType: 'missing_estimate',
   severity: 'warning',
   title: 'Test Alert',
   description: 'Test alert description',
-  ticketId: 'test-ticket-id',
+  issueId: 'test-issue-id',
+  issueKey: 'TEST-123',
+  organizationId: 'test-org-id',
+  ruleId: 'test-rule-id',
+  status: 'active',
+  detectedAt: new Date(),
+  notificationCount: 0,
   ...overrides,
 });
 
@@ -99,8 +105,33 @@ export const createTestSprint = (overrides: any = {}) => ({
   id: 'test-sprint-id',
   name: 'Test Sprint',
   state: 'active',
-  startDate: new Date(),
-  endDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000), // 2 weeks from now
+  startDate: new Date().toISOString(),
+  endDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(), // 2 weeks from now
+  ...overrides,
+});
+
+export const createTestIssue = (overrides: any = {}) => ({
+  id: 'test-issue-id',
+  key: 'TEST-123',
+  fields: {
+    summary: 'Test issue',
+    description: 'Test description',
+    status: { name: 'To Do', id: '1' },
+    issuetype: { name: 'Story', id: '1' },
+    project: { key: 'TEST', id: '1', name: 'Test Project' },
+    assignee: { accountId: 'user-1', displayName: 'Test User' },
+    reporter: { accountId: 'user-2', displayName: 'Reporter' },
+    priority: { name: 'Medium', id: '2' },
+    created: '2024-01-01T10:00:00Z',
+    updated: '2024-01-01T11:00:00Z',
+    labels: [],
+    components: [],
+    timeoriginalestimate: null,
+    timeestimate: null,
+    timespent: null,
+    customfield_10001: null, // Story points
+    ...overrides.fields,
+  },
   ...overrides,
 });
 

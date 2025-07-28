@@ -141,7 +141,7 @@ class ElasticsearchManager {
       logger.info('Elasticsearch connection established', {
         status: health.status,
         cluster_name: health.cluster_name,
-        elasticsearch_version: health.version?.number,
+        elasticsearch_version: (health as any).version?.number,
       });
 
       // Setup index templates and mappings
@@ -182,8 +182,9 @@ class ElasticsearchManager {
                 ],
               },
               ticket_key_analyzer: {
-                type: 'keyword',
-                normalizer: 'uppercase_normalizer',
+                type: 'custom',
+                tokenizer: 'keyword',
+                filter: ['uppercase'],
               },
             },
             filter: {
@@ -410,20 +411,18 @@ class ElasticsearchManager {
           index: searchQuery.filters?.organization_id 
             ? `sias-tickets-${searchQuery.filters.organization_id}`
             : 'sias-tickets-*',
-          body: {
-            query,
-            from: searchQuery.pagination?.from || 0,
-            size: searchQuery.pagination?.size || 20,
-            sort: this.buildSortOptions(searchQuery.sort),
-            highlight: {
-              fields: {
-                summary: {},
-                description: {},
-                'comments.body': {},
-              },
-              pre_tags: ['<mark>'],
-              post_tags: ['</mark>'],
+          query,
+          from: searchQuery.pagination?.from || 0,
+          size: searchQuery.pagination?.size || 20,
+          sort: this.buildSortOptions(searchQuery.sort),
+          highlight: {
+            fields: {
+              summary: {},
+              description: {},
+              'comments.body': {},
             },
+            pre_tags: ['<mark>'],
+            post_tags: ['</mark>'],
           },
         });
 
@@ -486,15 +485,13 @@ class ElasticsearchManager {
           index: searchQuery.filters?.organization_id 
             ? `sias-commits-${searchQuery.filters.organization_id}`
             : 'sias-commits-*',
-          body: {
-            query,
-            from: searchQuery.pagination?.from || 0,
-            size: searchQuery.pagination?.size || 20,
-            sort: this.buildSortOptions(searchQuery.sort || [{ field: 'committed_at', order: 'desc' }]),
-            highlight: {
-              fields: {
-                message: {},
-              },
+          query,
+          from: searchQuery.pagination?.from || 0,
+          size: searchQuery.pagination?.size || 20,
+          sort: this.buildSortOptions(searchQuery.sort || [{ field: 'committed_at', order: 'desc' }]),
+          highlight: {
+            fields: {
+              message: {},
             },
           },
         });
@@ -618,7 +615,7 @@ class ElasticsearchManager {
 
       logger.debug('Ticket deleted from search index', { ticketKey });
     } catch (error) {
-      if (error.meta?.statusCode !== 404) {
+      if ((error as any).meta?.statusCode !== 404) {
         logger.error('Failed to delete ticket from search index:', error);
         throw error;
       }

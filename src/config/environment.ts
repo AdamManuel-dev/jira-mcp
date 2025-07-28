@@ -83,6 +83,16 @@ const envSchema = Joi.object({
   ML_MODEL_API_URL: Joi.string().uri().default('http://localhost:8000'),
   ML_MODEL_API_KEY: Joi.string().optional(),
   
+  // Elasticsearch
+  ELASTICSEARCH_NODE: Joi.string().uri().default('http://localhost:9200'),
+  ELASTICSEARCH_USERNAME: Joi.string().optional(),
+  ELASTICSEARCH_PASSWORD: Joi.string().optional(),
+  ELASTICSEARCH_API_KEY: Joi.string().optional(),
+  ELASTICSEARCH_TLS_CA: Joi.string().optional(),
+  ELASTICSEARCH_TLS_CERT: Joi.string().optional(),
+  ELASTICSEARCH_TLS_KEY: Joi.string().optional(),
+  ELASTICSEARCH_TLS_REJECT_UNAUTHORIZED: Joi.boolean().default(true),
+
   // Monitoring
   LOG_LEVEL: Joi.string().valid('error', 'warn', 'info', 'debug').default('info'),
   SENTRY_DSN: Joi.string().uri().optional(),
@@ -181,6 +191,19 @@ export const config = {
     },
   },
   
+  elasticsearch: {
+    node: envVars.ELASTICSEARCH_NODE,
+    username: envVars.ELASTICSEARCH_USERNAME,
+    password: envVars.ELASTICSEARCH_PASSWORD,
+    apiKey: envVars.ELASTICSEARCH_API_KEY,
+    tls: {
+      ca: envVars.ELASTICSEARCH_TLS_CA,
+      cert: envVars.ELASTICSEARCH_TLS_CERT,
+      key: envVars.ELASTICSEARCH_TLS_KEY,
+      rejectUnauthorized: envVars.ELASTICSEARCH_TLS_REJECT_UNAUTHORIZED,
+    },
+  },
+
   ml: {
     apiUrl: envVars.ML_MODEL_API_URL,
     apiKey: envVars.ML_MODEL_API_KEY,

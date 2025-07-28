@@ -315,7 +315,7 @@ export class GitHubWebhookService extends BaseService {
           pr.title,
           pr.body,
           pr.state,
-          pr.user?.login, // This would need to be mapped to user ID
+          (pr as any).user?.login || 'unknown', // This would need to be mapped to user ID
           pr.base.ref,
           pr.head.ref,
           pr.merged_at,

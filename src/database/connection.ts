@@ -58,9 +58,9 @@ class DatabaseConnection {
         logger.debug('Client removed from database pool');
       });
 
-    } catch (error) {
+    } catch (error: unknown) {
       logger.error('Failed to connect to database:', error);
-      throw error;
+      throw error instanceof Error ? error : new Error('Failed to connect to database');
     }
   }
 
@@ -91,13 +91,14 @@ class DatabaseConnection {
       });
 
       return result.rows;
-    } catch (error) {
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown database error';
       logger.error('Database query error:', {
         query: text,
         params,
-        error: error.message,
+        error: errorMessage,
       });
-      throw error;
+      throw error instanceof Error ? error : new Error('Database query failed');
     }
   }
 

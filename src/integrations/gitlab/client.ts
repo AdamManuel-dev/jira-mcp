@@ -247,7 +247,7 @@ export class GitLabApiClient {
 
         return response.data;
       } catch (error) {
-        this.logger.error('Failed to list GitLab projects:', error);
+        logger.error('Failed to list GitLab projects:', error);
         throw error;
       }
     });
@@ -262,7 +262,7 @@ export class GitLabApiClient {
         const response = await this.axios.get(`/projects/${encodeURIComponent(projectId)}`);
         return response.data;
       } catch (error) {
-        this.logger.error(`Failed to get GitLab project ${projectId}:`, error);
+        logger.error(`Failed to get GitLab project ${projectId}:`, error);
         throw error;
       }
     });
@@ -295,7 +295,7 @@ export class GitLabApiClient {
 
         return response.data;
       } catch (error) {
-        this.logger.error(`Failed to list merge requests for project ${projectId}:`, error);
+        logger.error(`Failed to list merge requests for project ${projectId}:`, error);
         throw error;
       }
     });
@@ -312,7 +312,7 @@ export class GitLabApiClient {
         );
         return response.data;
       } catch (error) {
-        this.logger.error(`Failed to get merge request ${mergeRequestIid} for project ${projectId}:`, error);
+        logger.error(`Failed to get merge request ${mergeRequestIid} for project ${projectId}:`, error);
         throw error;
       }
     });
@@ -329,7 +329,7 @@ export class GitLabApiClient {
         );
         return response.data;
       } catch (error) {
-        this.logger.error(`Failed to get commits for merge request ${mergeRequestIid}:`, error);
+        logger.error(`Failed to get commits for merge request ${mergeRequestIid}:`, error);
         throw error;
       }
     });
@@ -362,7 +362,7 @@ export class GitLabApiClient {
 
         return response.data;
       } catch (error) {
-        this.logger.error(`Failed to list commits for project ${projectId}:`, error);
+        logger.error(`Failed to list commits for project ${projectId}:`, error);
         throw error;
       }
     });
@@ -384,7 +384,7 @@ export class GitLabApiClient {
         );
         return response.data;
       } catch (error) {
-        this.logger.error(`Failed to get commit ${sha} for project ${projectId}:`, error);
+        logger.error(`Failed to get commit ${sha} for project ${projectId}:`, error);
         throw error;
       }
     });
@@ -415,7 +415,7 @@ export class GitLabApiClient {
 
         return response.data;
       } catch (error) {
-        this.logger.error(`Failed to list pipelines for project ${projectId}:`, error);
+        logger.error(`Failed to list pipelines for project ${projectId}:`, error);
         throw error;
       }
     });
@@ -462,7 +462,7 @@ export class GitLabApiClient {
 
         return response.data;
       } catch (error) {
-        this.logger.error(`Failed to create webhook for project ${projectId}:`, error);
+        logger.error(`Failed to create webhook for project ${projectId}:`, error);
         throw error;
       }
     });
@@ -477,7 +477,7 @@ export class GitLabApiClient {
         const response = await this.axios.get(`/projects/${encodeURIComponent(projectId)}/hooks`);
         return response.data;
       } catch (error) {
-        this.logger.error(`Failed to list webhooks for project ${projectId}:`, error);
+        logger.error(`Failed to list webhooks for project ${projectId}:`, error);
         throw error;
       }
     });
@@ -494,7 +494,7 @@ export class GitLabApiClient {
         const response = await this.axios.get('/user');
         return response.data;
       } catch (error) {
-        this.logger.error('Failed to get current GitLab user:', error);
+        logger.error('Failed to get current GitLab user:', error);
         throw error;
       }
     });
@@ -555,8 +555,8 @@ export class GitLabApiClient {
       // But we can check if we're getting rate limited
       const response = await this.axios.get('/user');
       return {
-        remaining: parseInt(response.headers['ratelimit-remaining'] || '5000'),
-        reset: parseInt(response.headers['ratelimit-reset'] || '0'),
+        remaining: parseInt(String(response.headers['ratelimit-remaining'] || '5000')),
+        reset: parseInt(String(response.headers['ratelimit-reset'] || '0')),
       };
     } catch (error) {
       if (error.response?.status === 429) {

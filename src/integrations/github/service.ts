@@ -165,7 +165,7 @@ export class GitHubIntegrationService extends BaseService {
           } catch (error) {
             this.logger.error(`Failed to sync repository ${repo.full_name}:`, error);
             result.stats.errors++;
-            result.errors.push(`${repo.full_name}: ${error.message}`);
+            result.errors.push(`${repo.full_name}: ${error instanceof Error ? error.message : 'Unknown error'}`);
           }
         }
 
@@ -175,7 +175,7 @@ export class GitHubIntegrationService extends BaseService {
       } catch (error) {
         this.logger.error('Initial GitHub sync failed:', error);
         result.success = false;
-        result.errors.push(error.message);
+        result.errors.push(error instanceof Error ? error.message : 'Unknown error');
         return result;
       }
     });
@@ -470,7 +470,7 @@ export class GitHubIntegrationService extends BaseService {
           } catch (error) {
             this.logger.error(`Incremental sync failed for ${repo.full_name}:`, error);
             result.stats.errors++;
-            result.errors.push(`${repo.full_name}: ${error.message}`);
+            result.errors.push(`${repo.full_name}: ${error instanceof Error ? error.message : 'Unknown error'}`);
           }
         }
 
@@ -493,7 +493,7 @@ export class GitHubIntegrationService extends BaseService {
       } catch (error) {
         this.logger.error('Incremental GitHub sync failed:', error);
         result.success = false;
-        result.errors.push(error.message);
+        result.errors.push(error instanceof Error ? error.message : 'Unknown error');
         return result;
       }
     });
@@ -604,22 +604,19 @@ export class GitHubIntegrationService extends BaseService {
   /**
    * Health check for all GitHub integrations
    */
-  async healthCheck(): Promise<{ healthy: boolean; details: Record<string, boolean> }> {
-    const details: Record<string, boolean> = {};
+  async healthCheck(): Promise<boolean> {
     let allHealthy = true;
 
     for (const [integrationId, client] of this.clients) {
       try {
         const isHealthy = await client.healthCheck();
-        details[integrationId] = isHealthy;
         if (!isHealthy) allHealthy = false;
       } catch (error) {
-        details[integrationId] = false;
         allHealthy = false;
       }
     }
 
-    return { healthy: allHealthy, details };
+    return allHealthy;
   }
 
   /**

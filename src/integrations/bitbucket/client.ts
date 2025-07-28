@@ -230,7 +230,7 @@ export class BitbucketApiClient {
 
         return response.data.values || [];
       } catch (error) {
-        this.logger.error('Failed to list Bitbucket repositories:', error);
+        logger.error('Failed to list Bitbucket repositories:', error);
         throw error;
       }
     });
@@ -245,7 +245,7 @@ export class BitbucketApiClient {
         const response = await this.axios.get(`/repositories/${this.config.workspace}/${repoSlug}`);
         return response.data;
       } catch (error) {
-        this.logger.error(`Failed to get Bitbucket repository ${repoSlug}:`, error);
+        logger.error(`Failed to get Bitbucket repository ${repoSlug}:`, error);
         throw error;
       }
     });
@@ -278,7 +278,7 @@ export class BitbucketApiClient {
 
         return response.data.values || [];
       } catch (error) {
-        this.logger.error(`Failed to list pull requests for ${repoSlug}:`, error);
+        logger.error(`Failed to list pull requests for ${repoSlug}:`, error);
         throw error;
       }
     });
@@ -295,7 +295,7 @@ export class BitbucketApiClient {
         );
         return response.data;
       } catch (error) {
-        this.logger.error(`Failed to get pull request ${pullRequestId} for ${repoSlug}:`, error);
+        logger.error(`Failed to get pull request ${pullRequestId} for ${repoSlug}:`, error);
         throw error;
       }
     });
@@ -312,7 +312,7 @@ export class BitbucketApiClient {
         );
         return response.data.values || [];
       } catch (error) {
-        this.logger.error(`Failed to get commits for pull request ${pullRequestId}:`, error);
+        logger.error(`Failed to get commits for pull request ${pullRequestId}:`, error);
         throw error;
       }
     });
@@ -346,7 +346,7 @@ export class BitbucketApiClient {
 
         return response.data.values || [];
       } catch (error) {
-        this.logger.error(`Failed to list commits for ${repoSlug}:`, error);
+        logger.error(`Failed to list commits for ${repoSlug}:`, error);
         throw error;
       }
     });
@@ -363,7 +363,7 @@ export class BitbucketApiClient {
         );
         return response.data;
       } catch (error) {
-        this.logger.error(`Failed to get commit ${commitHash} for ${repoSlug}:`, error);
+        logger.error(`Failed to get commit ${commitHash} for ${repoSlug}:`, error);
         throw error;
       }
     });
@@ -393,7 +393,7 @@ export class BitbucketApiClient {
 
         return response.data;
       } catch (error) {
-        this.logger.error(`Failed to create webhook for ${repoSlug}:`, error);
+        logger.error(`Failed to create webhook for ${repoSlug}:`, error);
         throw error;
       }
     });
@@ -410,7 +410,7 @@ export class BitbucketApiClient {
         );
         return response.data.values || [];
       } catch (error) {
-        this.logger.error(`Failed to list webhooks for ${repoSlug}:`, error);
+        logger.error(`Failed to list webhooks for ${repoSlug}:`, error);
         throw error;
       }
     });
@@ -427,7 +427,7 @@ export class BitbucketApiClient {
         const response = await this.axios.get('/user');
         return response.data;
       } catch (error) {
-        this.logger.error('Failed to get current Bitbucket user:', error);
+        logger.error('Failed to get current Bitbucket user:', error);
         throw error;
       }
     });
@@ -444,7 +444,7 @@ export class BitbucketApiClient {
         const response = await this.axios.get(`/workspaces/${this.config.workspace}`);
         return response.data;
       } catch (error) {
-        this.logger.error(`Failed to get workspace ${this.config.workspace}:`, error);
+        logger.error(`Failed to get workspace ${this.config.workspace}:`, error);
         throw error;
       }
     });

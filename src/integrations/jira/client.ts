@@ -1,6 +1,6 @@
 /**
  * @fileoverview JIRA REST API v3 client with authentication and error handling
- * @lastmodified 2025-07-27T23:35:00Z
+ * @lastmodified 2025-07-28T08:15:29Z
  * 
  * Features: Complete JIRA REST API v3 client, request/response interceptors, rate limiting, caching
  * Main APIs: Issues, projects, sprints, users, search, webhooks, custom fields
@@ -232,22 +232,26 @@ export class JiraApiClient {
   }
 
   /**
-   * Check circuit breaker state
+   * Evaluates circuit breaker state and throws error if service is unavailable
+   * 
+   * Implements circuit breaker pattern to prevent cascade failures. Opens circuit
+   * after 5 consecutive failures, stays open for 1 minute, then moves to half-open
+   * state for testing.
    */
   private checkCircuitBreaker(): void {
     const { failures, lastFailureTime, state } = this.circuitBreaker;
     const now = Date.now();
-    const failureThreshold = 5;
-    const timeoutMs = 60000; // 1 minute
+    const FAILURE_THRESHOLD = 5; // Max failures before opening circuit
+    const CIRCUIT_TIMEOUT_MS = 60000; // Circuit open timeout (1 minute)
 
     if (state === 'open') {
-      if (now - lastFailureTime > timeoutMs) {
+      if (now - lastFailureTime > CIRCUIT_TIMEOUT_MS) {
         this.circuitBreaker.state = 'half-open';
         logger.info('JIRA circuit breaker moved to half-open state');
       } else {
         throw new ExternalServiceError('JIRA', new Error('Circuit breaker is open'));
       }
-    } else if (state === 'closed' && failures >= failureThreshold) {
+    } else if (state === 'closed' && failures >= FAILURE_THRESHOLD) {
       this.circuitBreaker.state = 'open';
       logger.warn('JIRA circuit breaker opened due to failures', { failures });
       throw new ExternalServiceError('JIRA', new Error('Circuit breaker opened'));
@@ -292,7 +296,16 @@ export class JiraApiClient {
   }
 
   /**
-   * Generic GET request with caching
+   * Executes GET request with optional Redis caching for performance optimization
+   * 
+   * Checks cache first to avoid redundant API calls, then makes HTTP request
+   * if needed and caches the response for future use.
+   * 
+   * @param endpoint - API endpoint path
+   * @param params - Query parameters
+   * @param cacheKey - Optional Redis cache key
+   * @param cacheTtl - Cache time-to-live in seconds (default: 5 minutes)
+   * @returns Parsed response data
    */
   private async get<T>(
     endpoint: string,

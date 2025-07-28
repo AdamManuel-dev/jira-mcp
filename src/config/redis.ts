@@ -160,7 +160,7 @@ class RedisManager {
     
     try {
       const result = await this.client.expire(this.prefixKey(key), ttlSeconds);
-      return result === 1;
+      return result;
     } catch (error) {
       logger.error(`Redis EXPIRE error for key ${key}:`, error);
       throw error;
@@ -375,12 +375,12 @@ export const getRedisInfo = () => redisManager.clientInfo;
 class SimpleQueue {
   async add(queueName: string, data: any, options?: any): Promise<void> {
     // Implementation would use Redis queue system like Bull or similar
-    console.log(`Queuing job in ${queueName}:`, data);
+    logger.debug(`Queuing job in ${queueName}:`, data);
   }
 
   process(queueName: string, concurrency: number, processor: (job: any) => Promise<void>): void {
     // Implementation would setup queue processor
-    console.log(`Setting up processor for ${queueName} with concurrency ${concurrency}`);
+    logger.debug(`Setting up processor for ${queueName} with concurrency ${concurrency}`);
   }
 }
 

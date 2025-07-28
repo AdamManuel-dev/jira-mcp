@@ -1,6 +1,6 @@
 /**
  * @fileoverview JIRA integration service combining OAuth and API client
- * @lastmodified 2025-07-27T23:35:00Z
+ * @lastmodified 2025-07-28T08:15:29Z
  * 
  * Features: Complete JIRA integration, instance management, sync operations, field mapping
  * Main APIs: Integration setup, data synchronization, field discovery, webhook management
@@ -160,10 +160,10 @@ export class JiraIntegrationService extends BaseService {
       throw new Error(`Integration ${integrationId} not found`);
     }
 
-    // Create new client
+    // Create new client with integration credentials
     const client = new JiraApiClient({
       organizationId: integration.organizationId,
-      userId: '', // TODO: Get from integration record
+      userId: integration.createdBy || 'system', // Use integration creator or system user
       instanceId: integration.instanceId,
       baseUrl: integration.baseUrl,
     });
@@ -179,7 +179,14 @@ export class JiraIntegrationService extends BaseService {
   }
 
   /**
-   * Sync data from JIRA
+   * Performs comprehensive data synchronization from JIRA instance
+   * 
+   * Orchestrates sync of projects, sprints, and issues based on integration
+   * settings. Tracks statistics and errors for monitoring and troubleshooting.
+   * Updates last sync timestamp upon completion.
+   * 
+   * @param integrationId - Integration identifier for sync operation
+   * @returns Sync result with statistics, errors, and duration metrics
    */
   async syncIntegration(integrationId: string): Promise<SyncResult> {
     const startTime = Date.now();
@@ -254,7 +261,7 @@ export class JiraIntegrationService extends BaseService {
       return {
         success: false,
         stats,
-        errors: [...errors, error.message],
+        errors: [...errors, error instanceof Error ? error.message : 'Unknown error'],
         duration,
       };
     }
@@ -297,7 +304,7 @@ export class JiraIntegrationService extends BaseService {
               created++;
             }
           } catch (error) {
-            errors.push(`Failed to sync project ${project.key}: ${error.message}`);
+            errors.push(`Failed to sync project ${project.key}: ${error instanceof Error ? error.message : 'Unknown error'}`);
           }
         }
 
@@ -310,7 +317,7 @@ export class JiraIntegrationService extends BaseService {
 
         return { created, updated, errors };
       } catch (error) {
-        errors.push(`Failed to fetch projects: ${error.message}`);
+        errors.push(`Failed to fetch projects: ${error instanceof Error ? error.message : 'Unknown error'}`);
         return { created, updated, errors };
       }
     });
@@ -349,17 +356,17 @@ export class JiraIntegrationService extends BaseService {
                   created++;
                 }
               } catch (error) {
-                errors.push(`Failed to sync sprint ${sprint.name}: ${error.message}`);
+                errors.push(`Failed to sync sprint ${sprint.name}: ${error instanceof Error ? error.message : 'Unknown error'}`);
               }
             }
           } catch (error) {
-            errors.push(`Failed to sync sprints for board ${boardId}: ${error.message}`);
+            errors.push(`Failed to sync sprints for board ${boardId}: ${error instanceof Error ? error.message : 'Unknown error'}`);
           }
         }
 
         return { created, updated, errors };
       } catch (error) {
-        errors.push(`Failed to sync sprints: ${error.message}`);
+        errors.push(`Failed to sync sprints: ${error instanceof Error ? error.message : 'Unknown error'}`);
         return { created, updated, errors };
       }
     });
@@ -416,21 +423,21 @@ export class JiraIntegrationService extends BaseService {
                   created++;
                 }
               } catch (error) {
-                errors.push(`Failed to sync issue ${issue.key}: ${error.message}`);
+                errors.push(`Failed to sync issue ${issue.key}: ${error instanceof Error ? error.message : 'Unknown error'}`);
               }
             }
 
             hasMoreResults = startAt + maxResults < searchResult.total;
             startAt += maxResults;
           } catch (error) {
-            errors.push(`Failed to search issues: ${error.message}`);
+            errors.push(`Failed to search issues: ${error instanceof Error ? error.message : 'Unknown error'}`);
             break;
           }
         }
 
         return { created, updated, errors };
       } catch (error) {
-        errors.push(`Failed to sync issues: ${error.message}`);
+        errors.push(`Failed to sync issues: ${error instanceof Error ? error.message : 'Unknown error'}');
         return { created, updated, errors };
       }
     });
@@ -568,21 +575,32 @@ export class JiraIntegrationService extends BaseService {
     return config;
   }
 
+  /**
+   * Constructs JQL query string for issue synchronization based on integration settings
+   * 
+   * Builds query with project filters, date constraints, and default fallbacks.
+   * Ensures optimal performance by limiting scope and ordering by update time.
+   * 
+   * @param integration - Integration configuration with filter settings
+   * @param updatedSince - Optional date filter for incremental sync
+   * @returns JQL query string for issue search
+   */
   private buildIssueJQL(integration: JiraIntegrationConfig, updatedSince?: Date): string {
     const conditions: string[] = [];
 
-    // Project filter
+    // Apply project scope filter if configured
     if (integration.settings.projectFilters.length > 0) {
-      conditions.push(`project in (${integration.settings.projectFilters.join(',')})`);
+      const projectList = integration.settings.projectFilters.join(',');
+      conditions.push(`project in (${projectList})`);
     }
 
-    // Updated since filter
+    // Apply incremental sync date filter
     if (updatedSince) {
       const dateStr = updatedSince.toISOString().split('T')[0]; // YYYY-MM-DD format
       conditions.push(`updated >= "${dateStr}"`);
     }
 
-    // Default to updated in last 7 days if no specific filter
+    // Default fallback: sync last 7 days if no other filters
     if (conditions.length === 0) {
       conditions.push('updated >= -7d');
     }

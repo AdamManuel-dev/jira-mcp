@@ -107,6 +107,8 @@ interface ErrorResponse {
     requestId?: string;
     details?: any;
     stack?: string;
+    suggestion?: string;
+    documentation?: string;
   };
 }
 
@@ -178,6 +180,9 @@ const sendErrorProd = (err: AppError, req: Request, res: Response): void => {
         statusCode: err.statusCode,
         timestamp: new Date().toISOString(),
         requestId: req.headers['x-request-id'] as string,
+        // Add helpful context for better user experience
+        suggestion: getErrorSuggestion(err.code),
+        documentation: getDocumentationLink(err.code),
       },
     };
 
@@ -186,11 +191,13 @@ const sendErrorProd = (err: AppError, req: Request, res: Response): void => {
     // Send generic error message for programming errors
     const errorResponse: ErrorResponse = {
       error: {
-        message: 'Something went wrong!',
+        message: 'An unexpected error occurred. Our team has been notified.',
         code: 'INTERNAL_SERVER_ERROR',
         statusCode: 500,
         timestamp: new Date().toISOString(),
         requestId: req.headers['x-request-id'] as string,
+        suggestion: 'Please try again in a few minutes. If the issue persists, contact support.',
+        documentation: 'https://docs.sias.example.com/troubleshooting',
       },
     };
 
@@ -308,4 +315,35 @@ export const handleGracefulShutdown = (server: any): void => {
 
   process.on('SIGTERM', () => shutdown('SIGTERM'));
   process.on('SIGINT', () => shutdown('SIGINT'));
+};
+
+// Helper functions for better error UX
+const getErrorSuggestion = (code?: string): string => {
+  const suggestions: Record<string, string> = {
+    'AUTHENTICATION_ERROR': 'Please check your credentials and try logging in again.',
+    'AUTHORIZATION_ERROR': 'Contact your administrator to request the necessary permissions.',
+    'VALIDATION_ERROR': 'Please review the highlighted fields and ensure all required information is provided.',
+    'NOT_FOUND_ERROR': 'Please verify the resource identifier and try again.',
+    'CONFLICT_ERROR': 'This action conflicts with existing data. Please review and try a different approach.',
+    'RATE_LIMIT_ERROR': 'Please wait a moment before making additional requests.',
+    'EXTERNAL_SERVICE_ERROR': 'External service is temporarily unavailable. Please try again later.',
+    'DATABASE_ERROR': 'Database operation failed. Please try again or contact support if the issue persists.',
+  };
+  
+  return suggestions[code || ''] || 'Please review your request and try again.';
+};
+
+const getDocumentationLink = (code?: string): string => {
+  const links: Record<string, string> = {
+    'AUTHENTICATION_ERROR': 'https://docs.sias.example.com/authentication',
+    'AUTHORIZATION_ERROR': 'https://docs.sias.example.com/permissions',
+    'VALIDATION_ERROR': 'https://docs.sias.example.com/api-reference',
+    'NOT_FOUND_ERROR': 'https://docs.sias.example.com/api-reference',
+    'CONFLICT_ERROR': 'https://docs.sias.example.com/troubleshooting/conflicts',
+    'RATE_LIMIT_ERROR': 'https://docs.sias.example.com/rate-limiting',
+    'EXTERNAL_SERVICE_ERROR': 'https://docs.sias.example.com/integrations',
+    'DATABASE_ERROR': 'https://docs.sias.example.com/troubleshooting',
+  };
+  
+  return links[code || ''] || 'https://docs.sias.example.com/troubleshooting';
 };

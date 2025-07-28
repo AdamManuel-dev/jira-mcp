@@ -33,7 +33,10 @@
   "author": "SIAS Team",
   "license": "MIT",
   "dependencies": {
+    "@elastic/elasticsearch": "^9.0.3",
     "@graphql-tools/schema": "^10.0.25",
+    "@octokit/graphql": "^9.0.1",
+    "@octokit/rest": "^22.0.0",
     "@types/node": "^20.10.0",
     "@types/swagger-ui-express": "^4.1.8",
     "apollo-server-express": "^3.13.0",
