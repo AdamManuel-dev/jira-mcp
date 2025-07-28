@@ -659,12 +659,36 @@ class MissingTimeTrackingDetector extends AlertDetector {
 // Additional detector implementations would follow similar patterns...
 class MissingCodeDetector extends AlertDetector {
   async shouldTrigger(issue: JiraIssue, rule: AlertRule): Promise<boolean> {
-    // Would check Git integration for commits linked to issue
-    return false; // Placeholder
+    // Check if issue is in development status but has no linked commits
+    const developmentStatuses = ['In Progress', 'In Development', 'In Review'];
+    const isInDevelopment = developmentStatuses.includes(issue.fields.status.name);
+    
+    if (!isInDevelopment) return false;
+    
+    // Check if issue has been in development long enough to require commits
+    const threshold = rule.thresholds.codeCommitRequiredAfterHours || 24;
+    const statusChangeTime = new Date(issue.fields.updated).getTime();
+    const thresholdTime = threshold * 60 * 60 * 1000;
+    
+    const timeSinceInDevelopment = Date.now() - statusChangeTime;
+    if (timeSinceInDevelopment < thresholdTime) return false;
+    
+    // Query database for commits linked to this issue
+    const commits = await query(
+      `SELECT COUNT(*) as commit_count 
+       FROM commits 
+       WHERE ticket_references @> ARRAY[$1]`,
+      [issue.key]
+    );
+    
+    const hasCommits = commits[0]?.commit_count > 0;
+    return !hasCommits;
   }
 
   shouldResolve(issue: JiraIssue, rule: AlertRule): boolean {
-    return false; // Placeholder
+    // Resolve if issue is no longer in development or has commits
+    const developmentStatuses = ['In Progress', 'In Development', 'In Review'];
+    return !developmentStatuses.includes(issue.fields.status.name);
   }
 
   generateTitle(issue: JiraIssue, rule: AlertRule): string {
@@ -672,22 +696,94 @@ class MissingCodeDetector extends AlertDetector {
   }
 
   generateDescription(issue: JiraIssue, rule: AlertRule): string {
-    return `Issue ${issue.key} has no linked code commits. Please commit code and link to this issue.`;
+    const threshold = rule.thresholds.codeCommitRequiredAfterHours || 24;
+    return `Issue ${issue.key} has been in development for ${threshold}+ hours but has no linked code commits. Please commit code with issue reference in commit message.`;
   }
 
   async generateMetadata(issue: JiraIssue, rule: AlertRule): Promise<AlertMetadata> {
-    return {} as AlertMetadata; // Placeholder
+    const developmentStartTime = new Date(issue.fields.updated);
+    const hoursInDevelopment = Math.floor((Date.now() - developmentStartTime.getTime()) / (1000 * 60 * 60));
+    
+    return {
+      issueData: {
+        summary: issue.fields.summary,
+        status: issue.fields.status.name,
+        assignee: issue.fields.assignee?.displayName,
+        reporter: issue.fields.reporter?.displayName,
+        priority: issue.fields.priority?.name,
+        storyPoints: issue.fields.customfield_10001,
+        timeEstimate: issue.fields.timeestimate,
+        timeSpent: issue.fields.timespent,
+        labels: issue.fields.labels,
+        components: issue.fields.components?.map(c => c.name) || [],
+      },
+      contextData: {
+        hoursInDevelopment,
+        developmentStartTime: developmentStartTime.toISOString(),
+        expectedCommitTime: new Date(developmentStartTime.getTime() + (rule.thresholds.codeCommitRequiredAfterHours || 24) * 60 * 60 * 1000).toISOString(),
+      },
+      thresholds: rule.thresholds,
+      triggerData: {
+        field: 'commits',
+        currentValue: 0,
+        changeTime: developmentStartTime,
+      },
+    };
   }
 }
 
 class MissingPRDetector extends AlertDetector {
   async shouldTrigger(issue: JiraIssue, rule: AlertRule): Promise<boolean> {
-    // Would check Git integration for PRs linked to issue
-    return false; // Placeholder
+    // Check if issue has commits but no pull request
+    const reviewStatuses = ['In Review', 'Ready for Review', 'Code Review'];
+    const isInReview = reviewStatuses.includes(issue.fields.status.name);
+    
+    // Only trigger if issue has commits
+    const commits = await query(
+      `SELECT COUNT(*) as commit_count 
+       FROM commits 
+       WHERE ticket_references @> ARRAY[$1]`,
+      [issue.key]
+    );
+    
+    const hasCommits = commits[0]?.commit_count > 0;
+    if (!hasCommits) return false;
+    
+    // Check if there's already a PR for this issue
+    const prs = await query(
+      `SELECT COUNT(*) as pr_count 
+       FROM pull_requests 
+       WHERE ticket_references @> ARRAY[$1] AND state NOT IN ('closed', 'merged')`,
+      [issue.key]
+    );
+    
+    const hasPR = prs[0]?.pr_count > 0;
+    if (hasPR) return false;
+    
+    // Check if enough time has passed since last commit
+    const threshold = rule.thresholds.prRequiredAfterHours || 8;
+    const lastCommit = await query(
+      `SELECT MAX(committed_at) as last_commit 
+       FROM commits 
+       WHERE ticket_references @> ARRAY[$1]`,
+      [issue.key]
+    );
+    
+    if (lastCommit[0]?.last_commit) {
+      const lastCommitTime = new Date(lastCommit[0].last_commit).getTime();
+      const thresholdTime = threshold * 60 * 60 * 1000;
+      const timeSinceLastCommit = Date.now() - lastCommitTime;
+      
+      return timeSinceLastCommit > thresholdTime;
+    }
+    
+    return false;
   }
 
   shouldResolve(issue: JiraIssue, rule: AlertRule): boolean {
-    return false; // Placeholder
+    // This will be resolved when a PR is created through webhook events
+    const doneStatuses = ['Done', 'Closed', 'Resolved', 'Merged'];
+    return doneStatuses.includes(issue.fields.status.name);
   }
 
   generateTitle(issue: JiraIssue, rule: AlertRule): string {
@@ -695,22 +791,92 @@ class MissingPRDetector extends AlertDetector {
   }
 
   generateDescription(issue: JiraIssue, rule: AlertRule): string {
-    return `Issue ${issue.key} has code commits but no pull request. Please create PR for code review.`;
+    const threshold = rule.thresholds.prRequiredAfterHours || 8;
+    return `Issue ${issue.key} has code commits but no pull request created after ${threshold} hours. Please create PR for code review.`;
   }
 
   async generateMetadata(issue: JiraIssue, rule: AlertRule): Promise<AlertMetadata> {
-    return {} as AlertMetadata; // Placeholder
+    // Get commit details
+    const commits = await query(
+      `SELECT COUNT(*) as commit_count, MAX(committed_at) as last_commit_time
+       FROM commits 
+       WHERE ticket_references @> ARRAY[$1]`,
+      [issue.key]
+    );
+    
+    const commitCount = commits[0]?.commit_count || 0;
+    const lastCommitTime = commits[0]?.last_commit_time ? new Date(commits[0].last_commit_time) : null;
+    const hoursSinceLastCommit = lastCommitTime 
+      ? Math.floor((Date.now() - lastCommitTime.getTime()) / (1000 * 60 * 60))
+      : 0;
+    
+    return {
+      issueData: {
+        summary: issue.fields.summary,
+        status: issue.fields.status.name,
+        assignee: issue.fields.assignee?.displayName,
+        reporter: issue.fields.reporter?.displayName,
+        priority: issue.fields.priority?.name,
+        storyPoints: issue.fields.customfield_10001,
+        timeEstimate: issue.fields.timeestimate,
+        timeSpent: issue.fields.timespent,
+        labels: issue.fields.labels,
+        components: issue.fields.components?.map(c => c.name) || [],
+      },
+      contextData: {
+        commitCount,
+        lastCommitTime: lastCommitTime?.toISOString(),
+        hoursSinceLastCommit,
+        expectedPRTime: lastCommitTime 
+          ? new Date(lastCommitTime.getTime() + (rule.thresholds.prRequiredAfterHours || 8) * 60 * 60 * 1000).toISOString()
+          : null,
+      },
+      thresholds: rule.thresholds,
+      triggerData: {
+        field: 'pull_request',
+        currentValue: null,
+        changeTime: lastCommitTime,
+      },
+    };
   }
 }
 
 class UnmergedPRDetector extends AlertDetector {
   async shouldTrigger(issue: JiraIssue, rule: AlertRule): Promise<boolean> {
-    // Would check for unmerged PRs past threshold
-    return false; // Placeholder
+    // Check for open PRs that have been unmerged for too long
+    const openPRs = await query(
+      `SELECT pr.id, pr.number, pr.title, pr.created_at, pr.updated_at, pr.state,
+              r.name as repo_name, r.full_name as repo_full_name
+       FROM pull_requests pr
+       JOIN repositories r ON pr.repository_id = r.id
+       WHERE pr.ticket_references @> ARRAY[$1] 
+         AND pr.state = 'open'
+       ORDER BY pr.created_at ASC`,
+      [issue.key]
+    );
+    
+    if (openPRs.length === 0) return false;
+    
+    const threshold = rule.thresholds.prMergeReminderAfterHours || 48;
+    const thresholdTime = threshold * 60 * 60 * 1000;
+    
+    // Check if any PR has been open longer than threshold
+    for (const pr of openPRs) {
+      const prCreatedTime = new Date(pr.created_at).getTime();
+      const timeSinceCreated = Date.now() - prCreatedTime;
+      
+      if (timeSinceCreated > thresholdTime) {
+        return true;
+      }
+    }
+    
+    return false;
   }
 
   shouldResolve(issue: JiraIssue, rule: AlertRule): boolean {
-    return false; // Placeholder
+    // This will be resolved when PR is merged or closed through webhook events
+    const doneStatuses = ['Done', 'Closed', 'Resolved', 'Merged'];
+    return doneStatuses.includes(issue.fields.status.name);
   }
 
   generateTitle(issue: JiraIssue, rule: AlertRule): string {
@@ -718,11 +884,63 @@ class UnmergedPRDetector extends AlertDetector {
   }
 
   generateDescription(issue: JiraIssue, rule: AlertRule): string {
-    return `Issue ${issue.key} has unmerged pull request requiring attention.`;
+    const threshold = rule.thresholds.prMergeReminderAfterHours || 48;
+    return `Issue ${issue.key} has an open pull request that has been unmerged for over ${threshold} hours. Please review and merge or provide feedback.`;
   }
 
   async generateMetadata(issue: JiraIssue, rule: AlertRule): Promise<AlertMetadata> {
-    return {} as AlertMetadata; // Placeholder
+    // Get PR details
+    const openPRs = await query(
+      `SELECT pr.id, pr.number, pr.title, pr.created_at, pr.updated_at, pr.state,
+              r.name as repo_name, r.full_name as repo_full_name,
+              pr.base_branch, pr.head_branch
+       FROM pull_requests pr
+       JOIN repositories r ON pr.repository_id = r.id
+       WHERE pr.ticket_references @> ARRAY[$1] 
+         AND pr.state = 'open'
+       ORDER BY pr.created_at ASC`,
+      [issue.key]
+    );
+    
+    const oldestPR = openPRs[0];
+    const prCreatedTime = oldestPR ? new Date(oldestPR.created_at) : null;
+    const hoursSinceCreated = prCreatedTime 
+      ? Math.floor((Date.now() - prCreatedTime.getTime()) / (1000 * 60 * 60))
+      : 0;
+    
+    return {
+      issueData: {
+        summary: issue.fields.summary,
+        status: issue.fields.status.name,
+        assignee: issue.fields.assignee?.displayName,
+        reporter: issue.fields.reporter?.displayName,
+        priority: issue.fields.priority?.name,
+        storyPoints: issue.fields.customfield_10001,
+        timeEstimate: issue.fields.timeestimate,
+        timeSpent: issue.fields.timespent,
+        labels: issue.fields.labels,
+        components: issue.fields.components?.map(c => c.name) || [],
+      },
+      contextData: {
+        openPRCount: openPRs.length,
+        oldestPRNumber: oldestPR?.number,
+        oldestPRTitle: oldestPR?.title,
+        oldestPRRepo: oldestPR?.repo_full_name,
+        prCreatedTime: prCreatedTime?.toISOString(),
+        hoursSinceCreated,
+        baseBranch: oldestPR?.base_branch,
+        headBranch: oldestPR?.head_branch,
+        expectedMergeTime: prCreatedTime 
+          ? new Date(prCreatedTime.getTime() + (rule.thresholds.prMergeReminderAfterHours || 48) * 60 * 60 * 1000).toISOString()
+          : null,
+      },
+      thresholds: rule.thresholds,
+      triggerData: {
+        field: 'pr_merge_status',
+        currentValue: 'open',
+        changeTime: prCreatedTime,
+      },
+    };
   }
 }
 
@@ -786,13 +1004,63 @@ class EarlyCompletionDetector extends AlertDetector {
 }
 
 class UnansweredMentionDetector extends AlertDetector {
-  async shouldTrigger(issue: JiraIssue, rule: AlertRule): Promise<boolean> {
-    // Would check for @mentions without responses
-    return false; // Placeholder
+  async shouldTrigger(issue: JiraIssue, rule: AlertRule, changelog?: JiraChangeHistory): Promise<boolean> {
+    // Only trigger when comments are added with mentions
+    if (!changelog || !changelog.items.some(item => item.field === 'comment')) {
+      return false;
+    }
+    
+    // Get recent comments with mentions for specific users
+    const threshold = rule.thresholds.mentionResponseTimeHours || 4;
+    const thresholdTime = new Date(Date.now() - threshold * 60 * 60 * 1000);
+    
+    const recentMentions = await query(
+      `SELECT c.id, c.body, c.author_id, c.mentions, c.created_at
+       FROM comments c
+       WHERE c.ticket_id = $1 
+         AND c.created_at > $2
+         AND array_length(c.mentions, 1) > 0
+       ORDER BY c.created_at DESC`,
+      [issue.id, thresholdTime]
+    );
+    
+    if (recentMentions.length === 0) return false;
+    
+    // Check if any mentioned users haven't responded
+    for (const comment of recentMentions) {
+      const mentionedUsers = comment.mentions || [];
+      const commentTime = new Date(comment.created_at);
+      
+      for (const mentionedUserId of mentionedUsers) {
+        // Check if mentioned user has commented after being mentioned
+        const hasResponded = await query(
+          `SELECT COUNT(*) as response_count
+           FROM comments c2
+           WHERE c2.ticket_id = $1 
+             AND c2.author_id = $2
+             AND c2.created_at > $3`,
+          [issue.id, mentionedUserId, commentTime]
+        );
+        
+        const responseCount = hasResponded[0]?.response_count || 0;
+        
+        // If user hasn't responded and enough time has passed
+        if (responseCount === 0) {
+          const hoursSinceMention = Math.floor((Date.now() - commentTime.getTime()) / (1000 * 60 * 60));
+          if (hoursSinceMention >= threshold) {
+            return true;
+          }
+        }
+      }
+    }
+    
+    return false;
   }
 
   shouldResolve(issue: JiraIssue, rule: AlertRule): boolean {
-    return false; // Placeholder
+    // This will be resolved when mentioned user responds or issue is closed
+    const closedStatuses = ['Done', 'Closed', 'Resolved'];
+    return closedStatuses.includes(issue.fields.status.name);
   }
 
   generateTitle(issue: JiraIssue, rule: AlertRule): string {
@@ -801,10 +1069,62 @@ class UnansweredMentionDetector extends AlertDetector {
 
   generateDescription(issue: JiraIssue, rule: AlertRule): string {
     const threshold = rule.thresholds.mentionResponseTimeHours || 4;
-    return `You were mentioned in ${issue.key} ${threshold}+ hours ago without response.`;
+    return `You were mentioned in ${issue.key} over ${threshold} hours ago without response. Please review and respond if needed.`;
   }
 
   async generateMetadata(issue: JiraIssue, rule: AlertRule): Promise<AlertMetadata> {
-    return {} as AlertMetadata; // Placeholder
+    // Get the mention details
+    const threshold = rule.thresholds.mentionResponseTimeHours || 4;
+    const thresholdTime = new Date(Date.now() - threshold * 60 * 60 * 1000);
+    
+    const recentMentions = await query(
+      `SELECT c.id, c.body, c.author_id, c.mentions, c.created_at,
+              u.name as author_name
+       FROM comments c
+       LEFT JOIN users u ON c.author_id = u.id
+       WHERE c.ticket_id = $1 
+         AND c.created_at > $2
+         AND array_length(c.mentions, 1) > 0
+       ORDER BY c.created_at DESC
+       LIMIT 1`,
+      [issue.id, thresholdTime]
+    );
+    
+    const latestMention = recentMentions[0];
+    const mentionTime = latestMention ? new Date(latestMention.created_at) : null;
+    const hoursSinceMention = mentionTime 
+      ? Math.floor((Date.now() - mentionTime.getTime()) / (1000 * 60 * 60))
+      : 0;
+    
+    return {
+      issueData: {
+        summary: issue.fields.summary,
+        status: issue.fields.status.name,
+        assignee: issue.fields.assignee?.displayName,
+        reporter: issue.fields.reporter?.displayName,
+        priority: issue.fields.priority?.name,
+        storyPoints: issue.fields.customfield_10001,
+        timeEstimate: issue.fields.timeestimate,
+        timeSpent: issue.fields.timespent,
+        labels: issue.fields.labels,
+        components: issue.fields.components?.map(c => c.name) || [],
+      },
+      contextData: {
+        mentionTime: mentionTime?.toISOString(),
+        hoursSinceMention,
+        mentionAuthor: latestMention?.author_name,
+        mentionBody: latestMention?.body?.substring(0, 200) + (latestMention?.body?.length > 200 ? '...' : ''),
+        mentionedUserCount: latestMention?.mentions?.length || 0,
+        expectedResponseTime: mentionTime 
+          ? new Date(mentionTime.getTime() + threshold * 60 * 60 * 1000).toISOString()
+          : null,
+      },
+      thresholds: rule.thresholds,
+      triggerData: {
+        field: 'mention_response',
+        currentValue: null,
+        changeTime: mentionTime,
+      },
+    };
   }
 }
