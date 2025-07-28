@@ -259,7 +259,12 @@ export class JiraApiClient {
   }
 
   /**
-   * Update rate limit information from response headers
+   * Updates internal rate limit tracking from JIRA API response headers
+   * 
+   * Extracts rate limit information from HTTP headers and updates internal state.
+   * Logs warnings when approaching rate limits to prevent service disruption.
+   * 
+   * @param response - HTTP response containing rate limit headers
    */
   private updateRateLimitInfo(response: AxiosResponse): void {
     const limit = response.headers['x-ratelimit-limit'];
@@ -281,7 +286,12 @@ export class JiraApiClient {
   }
 
   /**
-   * Get rate limit reset time in seconds
+   * Calculates seconds until rate limit resets for retry timing
+   * 
+   * Computes time remaining until rate limit window resets based on current
+   * time and reset timestamp from JIRA headers. Used for exponential backoff.
+   * 
+   * @returns Seconds until rate limit resets (minimum 0, default 60 if no data)
    */
   private getRateLimitResetTime(): number {
     if (!this.rateLimitInfo) return 60; // Default 1 minute
@@ -289,7 +299,13 @@ export class JiraApiClient {
   }
 
   /**
-   * Delay helper for retry logic
+   * Creates a promise-based delay for retry and backoff operations
+   * 
+   * Used internally for exponential backoff retry logic and rate limit handling.
+   * Provides non-blocking delay mechanism for API client retry patterns.
+   * 
+   * @param ms - Milliseconds to delay execution
+   * @returns Promise that resolves after specified delay
    */
   private delay(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
@@ -332,7 +348,17 @@ export class JiraApiClient {
   }
 
   /**
-   * Generic POST request
+   * Executes POST request with authentication and error handling
+   * 
+   * Performs authenticated POST request to JIRA API endpoint with automatic
+   * retry logic, circuit breaker protection, and standardized error handling.
+   * 
+   * @param endpoint - API endpoint path (relative to base URL)
+   * @param data - Optional request body data
+   * @returns Parsed response data of specified type
+   * @throws {AuthenticationError} When authentication fails
+   * @throws {RateLimitError} When rate limits are exceeded
+   * @throws {ExternalServiceError} For other API errors
    */
   private async post<T>(endpoint: string, data?: any): Promise<T> {
     const response = await this.httpClient.post<T>(endpoint, data);
@@ -340,7 +366,17 @@ export class JiraApiClient {
   }
 
   /**
-   * Generic PUT request
+   * Executes PUT request with authentication and error handling
+   * 
+   * Performs authenticated PUT request to JIRA API endpoint with automatic
+   * retry logic, circuit breaker protection, and standardized error handling.
+   * 
+   * @param endpoint - API endpoint path (relative to base URL)
+   * @param data - Optional request body data
+   * @returns Parsed response data of specified type
+   * @throws {AuthenticationError} When authentication fails
+   * @throws {RateLimitError} When rate limits are exceeded
+   * @throws {ExternalServiceError} For other API errors
    */
   private async put<T>(endpoint: string, data?: any): Promise<T> {
     const response = await this.httpClient.put<T>(endpoint, data);
@@ -348,7 +384,16 @@ export class JiraApiClient {
   }
 
   /**
-   * Generic DELETE request
+   * Executes DELETE request with authentication and error handling
+   * 
+   * Performs authenticated DELETE request to JIRA API endpoint with automatic
+   * retry logic, circuit breaker protection, and standardized error handling.
+   * 
+   * @param endpoint - API endpoint path (relative to base URL)
+   * @returns Parsed response data of specified type
+   * @throws {AuthenticationError} When authentication fails
+   * @throws {RateLimitError} When rate limits are exceeded
+   * @throws {ExternalServiceError} For other API errors
    */
   private async delete<T>(endpoint: string): Promise<T> {
     const response = await this.httpClient.delete<T>(endpoint);
@@ -358,7 +403,20 @@ export class JiraApiClient {
   // === PROJECTS API ===
 
   /**
-   * Get all projects
+   * Retrieves all accessible projects from JIRA instance
+   * 
+   * Fetches all projects the authenticated user has access to, with optional
+   * field expansion for additional project details. Results are cached for
+   * 10 minutes to improve performance.
+   * 
+   * @param expand - Optional fields to expand (e.g., ['description', 'lead'])
+   * @returns Array of JIRA projects with basic information
+   * @throws {AuthenticationError} When user lacks project access permissions
+   * @throws {ExternalServiceError} For API communication errors
+   * 
+   * @example
+   * const projects = await client.getProjects(['description', 'lead']);
+   * console.log(`Found ${projects.length} projects`);
    */
   async getProjects(expand?: string[]): Promise<JiraProject[]> {
     return perf.measureAsync('jira.getProjects', async () => {
@@ -371,7 +429,19 @@ export class JiraApiClient {
   }
 
   /**
-   * Get project by key or ID
+   * Retrieves detailed information for a specific JIRA project
+   * 
+   * Fetches project details by project key or ID with optional field expansion.
+   * Results are cached for 5 minutes to balance freshness with performance.
+   * 
+   * @param projectIdOrKey - Project key (e.g., 'PROJ') or numeric ID
+   * @param expand - Optional fields to expand for additional details
+   * @returns Complete project information including metadata
+   * @throws {ExternalServiceError} When project is not found or inaccessible
+   * 
+   * @example
+   * const project = await client.getProject('MYPROJ', ['components', 'versions']);
+   * console.log(`Project: ${project.name} (${project.key})`);
    */
   async getProject(projectIdOrKey: string, expand?: string[]): Promise<JiraProject> {
     return perf.measureAsync('jira.getProject', async () => {
@@ -386,7 +456,21 @@ export class JiraApiClient {
   // === ISSUES API ===
 
   /**
-   * Search for issues using JQL
+   * Searches for JIRA issues using JQL (JIRA Query Language)
+   * 
+   * Executes a JQL query to find issues matching specified criteria. Supports
+   * pagination, field selection, and result expansion for optimized queries.
+   * 
+   * @param searchRequest - JQL search parameters including query, pagination, and fields
+   * @returns Search results with issues, pagination info, and total count
+   * @throws {ExternalServiceError} When JQL syntax is invalid or search fails
+   * 
+   * @example
+   * const results = await client.searchIssues({
+   *   jql: 'project = MYPROJ AND status = "In Progress"',
+   *   maxResults: 50,
+   *   fields: ['key', 'summary', 'status', 'assignee']
+   * });
    */
   async searchIssues(searchRequest: JiraSearchRequest): Promise<JiraSearchResponse> {
     return perf.measureAsync('jira.searchIssues', async () => {
@@ -401,7 +485,20 @@ export class JiraApiClient {
   }
 
   /**
-   * Get issue by key or ID
+   * Retrieves detailed information for a specific JIRA issue
+   * 
+   * Fetches complete issue data by key or ID with optional field filtering
+   * and expansion. Results are cached for 1 minute for performance.
+   * 
+   * @param issueIdOrKey - Issue key (e.g., 'PROJ-123') or numeric ID
+   * @param expand - Optional fields to expand (e.g., ['changelog', 'transitions'])
+   * @param fields - Specific fields to retrieve (default: all fields)
+   * @returns Complete issue information including fields and metadata
+   * @throws {ExternalServiceError} When issue is not found or inaccessible
+   * 
+   * @example
+   * const issue = await client.getIssue('PROJ-123', ['changelog'], ['key', 'summary', 'status']);
+   * console.log(`Issue: ${issue.key} - ${issue.fields.summary}`);
    */
   async getIssue(issueIdOrKey: string, expand?: string[], fields?: string[]): Promise<JiraIssue> {
     return perf.measureAsync('jira.getIssue', async () => {
@@ -415,7 +512,24 @@ export class JiraApiClient {
   }
 
   /**
-   * Create issue
+   * Creates a new JIRA issue with specified field values
+   * 
+   * Creates issue in specified project with required and optional fields.
+   * Validates field values against project configuration and issue type constraints.
+   * 
+   * @param issueData - Issue creation data including project, type, and field values
+   * @returns Created issue with generated key and initial field values
+   * @throws {ExternalServiceError} When field validation fails or creation is denied
+   * 
+   * @example
+   * const newIssue = await client.createIssue({
+   *   fields: {
+   *     project: { key: 'PROJ' },
+   *     issuetype: { name: 'Bug' },
+   *     summary: 'Application crashes on login',
+   *     description: 'Detailed bug description...'
+   *   }
+   * });
    */
   async createIssue(issueData: any): Promise<JiraIssue> {
     return perf.measureAsync('jira.createIssue', async () => {
@@ -430,7 +544,23 @@ export class JiraApiClient {
   }
 
   /**
-   * Update issue
+   * Updates field values for an existing JIRA issue
+   * 
+   * Modifies issue fields using JIRA's update format. Supports both field
+   * replacement and append operations. Validates permissions and field constraints.
+   * 
+   * @param issueIdOrKey - Issue key (e.g., 'PROJ-123') or numeric ID
+   * @param updateData - Update operations including fields and update operations
+   * @throws {AuthenticationError} When user lacks edit permissions
+   * @throws {ExternalServiceError} When field validation fails or issue is locked
+   * 
+   * @example
+   * await client.updateIssue('PROJ-123', {
+   *   fields: {
+   *     summary: 'Updated issue summary',
+   *     assignee: { accountId: 'user123' }
+   *   }
+   * });
    */
   async updateIssue(issueIdOrKey: string, updateData: any): Promise<void> {
     return perf.measureAsync('jira.updateIssue', async () => {
@@ -444,7 +574,20 @@ export class JiraApiClient {
   }
 
   /**
-   * Get issue comments
+   * Retrieves paginated comments for a JIRA issue
+   * 
+   * Fetches comments with author information, timestamps, and content.
+   * Supports pagination for issues with many comments.
+   * 
+   * @param issueIdOrKey - Issue key (e.g., 'PROJ-123') or numeric ID
+   * @param startAt - Zero-based index of first comment to return
+   * @param maxResults - Maximum number of comments per page (max 1000)
+   * @returns Comments array with pagination metadata
+   * @throws {ExternalServiceError} When issue is not found or inaccessible
+   * 
+   * @example
+   * const { comments, total } = await client.getIssueComments('PROJ-123', 0, 25);
+   * console.log(`Showing ${comments.length} of ${total} comments`);
    */
   async getIssueComments(issueIdOrKey: string, startAt = 0, maxResults = 50): Promise<{
     comments: JiraComment[];
@@ -462,7 +605,21 @@ export class JiraApiClient {
   }
 
   /**
-   * Add comment to issue
+   * Adds a new comment to a JIRA issue
+   * 
+   * Creates comment with specified content and optional visibility restrictions.
+   * Supports rich text formatting using JIRA's Document Format.
+   * 
+   * @param issueIdOrKey - Issue key (e.g., 'PROJ-123') or numeric ID
+   * @param comment - Comment data including body and optional visibility settings
+   * @returns Created comment with ID, timestamp, and author information
+   * @throws {AuthenticationError} When user lacks comment permissions
+   * @throws {ExternalServiceError} When comment creation fails
+   * 
+   * @example
+   * const newComment = await client.addComment('PROJ-123', {
+   *   body: 'This issue has been investigated and requires frontend changes.'
+   * });
    */
   async addComment(issueIdOrKey: string, comment: any): Promise<JiraComment> {
     return perf.measureAsync('jira.addComment', async () => {
@@ -476,7 +633,20 @@ export class JiraApiClient {
   }
 
   /**
-   * Get issue worklogs
+   * Retrieves paginated work logs for a JIRA issue
+   * 
+   * Fetches time tracking entries with duration, author, and description.
+   * Supports pagination for issues with extensive work logging.
+   * 
+   * @param issueIdOrKey - Issue key (e.g., 'PROJ-123') or numeric ID
+   * @param startAt - Zero-based index of first worklog to return
+   * @param maxResults - Maximum number of worklogs per page (max 1000)
+   * @returns Worklogs array with pagination metadata
+   * @throws {ExternalServiceError} When issue is not found or time tracking disabled
+   * 
+   * @example
+   * const { worklogs, total } = await client.getIssueWorklogs('PROJ-123');
+   * const totalHours = worklogs.reduce((sum, log) => sum + log.timeSpentSeconds, 0) / 3600;
    */
   async getIssueWorklogs(issueIdOrKey: string, startAt = 0, maxResults = 50): Promise<{
     worklogs: JiraWorklog[];
@@ -494,7 +664,23 @@ export class JiraApiClient {
   }
 
   /**
-   * Add worklog to issue
+   * Logs time spent working on a JIRA issue
+   * 
+   * Records work with time spent, start date, and optional description.
+   * Updates issue's time tracking fields and generates audit trail.
+   * 
+   * @param issueIdOrKey - Issue key (e.g., 'PROJ-123') or numeric ID
+   * @param worklog - Work log data including timeSpent, started, and comment
+   * @returns Created worklog with ID, timestamps, and calculated values
+   * @throws {AuthenticationError} When user lacks work logging permissions
+   * @throws {ExternalServiceError} When time tracking is disabled or invalid
+   * 
+   * @example
+   * const worklog = await client.addWorklog('PROJ-123', {
+   *   timeSpent: '2h 30m',
+   *   started: '2025-07-28T09:00:00.000+0000',
+   *   comment: 'Implemented authentication service'
+   * });
    */
   async addWorklog(issueIdOrKey: string, worklog: any): Promise<JiraWorklog> {
     return perf.measureAsync('jira.addWorklog', async () => {
@@ -511,7 +697,19 @@ export class JiraApiClient {
   // === SPRINTS API ===
 
   /**
-   * Get sprints for a board
+   * Retrieves sprints associated with a JIRA Agile board
+   * 
+   * Fetches sprint information including dates, goals, and state.
+   * Results are cached for 5 minutes to improve dashboard performance.
+   * 
+   * @param boardId - Numeric ID of the JIRA board
+   * @param state - Optional sprint state filter ('active', 'future', 'closed')
+   * @returns Array of sprints matching the specified criteria
+   * @throws {ExternalServiceError} When board is not found or inaccessible
+   * 
+   * @example
+   * const activeSprints = await client.getBoardSprints(123, 'active');
+   * const currentSprint = activeSprints.find(s => s.state === 'active');
    */
   async getBoardSprints(boardId: number, state?: string): Promise<JiraSprint[]> {
     return perf.measureAsync('jira.getBoardSprints', async () => {
@@ -526,7 +724,19 @@ export class JiraApiClient {
   }
 
   /**
-   * Get sprint by ID
+   * Retrieves detailed information for a specific sprint
+   * 
+   * Fetches sprint metadata including dates, goal, board association,
+   * and completion statistics. Results are cached for 5 minutes.
+   * 
+   * @param sprintId - Numeric ID of the sprint
+   * @returns Complete sprint information with dates and metadata
+   * @throws {ExternalServiceError} When sprint is not found or inaccessible
+   * 
+   * @example
+   * const sprint = await client.getSprint(456);
+   * console.log(`Sprint: ${sprint.name} (${sprint.state})`);
+   * console.log(`Duration: ${sprint.startDate} to ${sprint.endDate}`);
    */
   async getSprint(sprintId: number): Promise<JiraSprint> {
     return perf.measureAsync('jira.getSprint', async () => {
@@ -536,7 +746,22 @@ export class JiraApiClient {
   }
 
   /**
-   * Get sprint issues
+   * Retrieves all issues assigned to a specific sprint
+   * 
+   * Fetches issues using optimized JQL query with essential fields for
+   * sprint reporting and analytics. Includes story points and time tracking.
+   * 
+   * @param sprintId - Numeric ID of the sprint
+   * @param startAt - Zero-based index for pagination
+   * @param maxResults - Maximum issues per page (default 100)
+   * @returns Search results with issues and sprint-specific metadata
+   * @throws {ExternalServiceError} When sprint is not found or query fails
+   * 
+   * @example
+   * const sprintIssues = await client.getSprintIssues(456);
+   * const storyPoints = sprintIssues.issues
+   *   .map(issue => issue.fields.customfield_10001 || 0)
+   *   .reduce((sum, points) => sum + points, 0);
    */
   async getSprintIssues(sprintId: number, startAt = 0, maxResults = 100): Promise<JiraSearchResponse> {
     return perf.measureAsync('jira.getSprintIssues', async () => {
@@ -559,7 +784,17 @@ export class JiraApiClient {
   // === USERS API ===
 
   /**
-   * Get current user
+   * Retrieves profile information for the authenticated user
+   * 
+   * Fetches current user's profile including display name, email,
+   * avatar, and permissions. Results are cached for 5 minutes.
+   * 
+   * @returns Current user profile and account information
+   * @throws {AuthenticationError} When token is invalid or expired
+   * 
+   * @example
+   * const user = await client.getCurrentUser();
+   * console.log(`Logged in as: ${user.displayName} (${user.emailAddress})`);
    */
   async getCurrentUser(): Promise<JiraUser> {
     return perf.measureAsync('jira.getCurrentUser', async () => {
@@ -569,7 +804,19 @@ export class JiraApiClient {
   }
 
   /**
-   * Search users
+   * Searches for JIRA users by name or email
+   * 
+   * Finds users matching the query string for assignment, mentions,
+   * or permission management. Respects user privacy settings.
+   * 
+   * @param query - Search string (name, display name, or email)
+   * @param maxResults - Maximum users to return (default 50, max 1000)
+   * @returns Array of matching user profiles
+   * @throws {ExternalServiceError} When search fails or user lacks browse permissions
+   * 
+   * @example
+   * const users = await client.searchUsers('john.doe');
+   * const assigneeOptions = users.map(u => ({ value: u.accountId, label: u.displayName }));
    */
   async searchUsers(query: string, maxResults = 50): Promise<JiraUser[]> {
     return perf.measureAsync('jira.searchUsers', async () => {
@@ -581,7 +828,17 @@ export class JiraApiClient {
   // === METADATA API ===
 
   /**
-   * Get issue types
+   * Retrieves all available issue types for the JIRA instance
+   * 
+   * Fetches issue type definitions including icons, workflows, and field
+   * configurations. Results are cached for 1 hour as they rarely change.
+   * 
+   * @returns Array of issue types with metadata and configuration
+   * @throws {ExternalServiceError} When metadata retrieval fails
+   * 
+   * @example
+   * const issueTypes = await client.getIssueTypes();
+   * const bugType = issueTypes.find(type => type.name === 'Bug');
    */
   async getIssueTypes(): Promise<JiraIssueType[]> {
     return perf.measureAsync('jira.getIssueTypes', async () => {
@@ -591,7 +848,17 @@ export class JiraApiClient {
   }
 
   /**
-   * Get statuses
+   * Retrieves all workflow statuses available in the JIRA instance
+   * 
+   * Fetches status definitions including categories, colors, and workflow
+   * transitions. Results are cached for 1 hour as they rarely change.
+   * 
+   * @returns Array of statuses with display names and categorization
+   * @throws {ExternalServiceError} When metadata retrieval fails
+   * 
+   * @example
+   * const statuses = await client.getStatuses();
+   * const doneStatuses = statuses.filter(s => s.statusCategory.key === 'done');
    */
   async getStatuses(): Promise<JiraStatus[]> {
     return perf.measureAsync('jira.getStatuses', async () => {
@@ -601,7 +868,17 @@ export class JiraApiClient {
   }
 
   /**
-   * Get priorities
+   * Retrieves all issue priorities configured in the JIRA instance
+   * 
+   * Fetches priority definitions including names, colors, and icons.
+   * Results are cached for 1 hour as priorities rarely change.
+   * 
+   * @returns Array of priorities ordered by importance level
+   * @throws {ExternalServiceError} When metadata retrieval fails
+   * 
+   * @example
+   * const priorities = await client.getPriorities();
+   * const highestPriority = priorities.find(p => p.name === 'Highest');
    */
   async getPriorities(): Promise<JiraPriority[]> {
     return perf.measureAsync('jira.getPriorities', async () => {
@@ -611,7 +888,19 @@ export class JiraApiClient {
   }
 
   /**
-   * Get custom fields
+   * Retrieves all custom field definitions for the JIRA instance
+   * 
+   * Fetches custom field metadata including field types, options, and
+   * project contexts. Used for dynamic form generation and data mapping.
+   * Results are cached for 1 hour as field definitions rarely change.
+   * 
+   * @returns Array of custom field definitions with context and schema
+   * @throws {ExternalServiceError} When field metadata retrieval fails
+   * 
+   * @example
+   * const customFields = await client.getCustomFields();
+   * const storyPointsField = customFields.find(f => f.name === 'Story Points');
+   * console.log(`Story Points field ID: ${storyPointsField.id}`);
    */
   async getCustomFields(): Promise<any[]> {
     return perf.measureAsync('jira.getCustomFields', async () => {
@@ -623,7 +912,18 @@ export class JiraApiClient {
   // === UTILITY METHODS ===
 
   /**
-   * Test connection to JIRA
+   * Tests connectivity and authentication to the JIRA instance
+   * 
+   * Performs a lightweight API call to verify credentials and network
+   * connectivity. Used for health checks and configuration validation.
+   * 
+   * @returns True if connection successful, false otherwise
+   * 
+   * @example
+   * const isConnected = await client.testConnection();
+   * if (!isConnected) {
+   *   console.error('JIRA connection failed - check credentials');
+   * }
    */
   async testConnection(): Promise<boolean> {
     try {
@@ -636,21 +936,51 @@ export class JiraApiClient {
   }
 
   /**
-   * Get rate limit information
+   * Returns current rate limit status from the JIRA API
+   * 
+   * Provides information about remaining requests, limits, and reset times
+   * for monitoring and throttling API usage.
+   * 
+   * @returns Current rate limit information or null if no data available
+   * 
+   * @example
+   * const rateLimit = client.getRateLimitInfo();
+   * if (rateLimit && rateLimit.remaining < 10) {
+   *   console.warn(`Low rate limit: ${rateLimit.remaining}/${rateLimit.limit}`);
+   * }
    */
   getRateLimitInfo(): RateLimitInfo | null {
     return this.rateLimitInfo;
   }
 
   /**
-   * Get circuit breaker state
+   * Returns current circuit breaker state for monitoring and diagnostics
+   * 
+   * Provides information about failure count, state, and timing for
+   * troubleshooting connectivity issues and system health monitoring.
+   * 
+   * @returns Copy of current circuit breaker state
+   * 
+   * @example
+   * const cbState = client.getCircuitBreakerState();
+   * if (cbState.state === 'open') {
+   *   console.warn(`Circuit breaker open - ${cbState.failures} failures`);
+   * }
    */
   getCircuitBreakerState(): CircuitBreakerState {
     return { ...this.circuitBreaker };
   }
 
   /**
-   * Reset circuit breaker
+   * Manually resets the circuit breaker to closed state
+   * 
+   * Clears failure count and reopens the circuit for API requests.
+   * Used for manual recovery after resolving connectivity issues.
+   * 
+   * @example
+   * // After resolving network issues
+   * client.resetCircuitBreaker();
+   * console.log('Circuit breaker reset - API calls will resume');
    */
   resetCircuitBreaker(): void {
     this.circuitBreaker = {

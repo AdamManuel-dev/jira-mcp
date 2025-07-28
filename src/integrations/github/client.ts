@@ -52,6 +52,14 @@ export class GitHubApiClient {
   private installationToken: string | null = null;
   private tokenExpiresAt: number = 0;
 
+  /**
+   * Creates a new GitHub API client instance
+   * 
+   * Initializes REST and GraphQL clients with configuration for GitHub Apps
+   * authentication. Supports both GitHub Cloud and Enterprise Server.
+   * 
+   * @param config - Client configuration including organization and installation IDs
+   */
   constructor(config: GitHubClientConfig) {
     this.config = config;
     
@@ -71,7 +79,18 @@ export class GitHubApiClient {
   }
 
   /**
-   * Initialize client with authentication
+   * Initializes the client with GitHub App authentication
+   * 
+   * Generates installation access token and configures both REST and GraphQL
+   * clients for authenticated requests. Must be called before using API methods.
+   * 
+   * @throws {AuthenticationError} When app credentials are invalid or installation not found
+   * @throws {ExternalServiceError} When GitHub API is unreachable
+   * 
+   * @example
+   * const client = new GitHubApiClient({ organizationId: 'org1', installationId: '123' });
+   * await client.initialize();
+   * const repos = await client.listRepositories();
    */
   async initialize(): Promise<void> {
     await this.refreshInstallationToken();
@@ -97,7 +116,14 @@ export class GitHubApiClient {
   }
 
   /**
-   * Generate and cache installation access token
+   * Generates and caches GitHub App installation access token
+   * 
+   * Creates JWT using app credentials, exchanges it for installation token,
+   * and caches the result with appropriate TTL. Handles token lifecycle
+   * automatically including early refresh to prevent expiration.
+   * 
+   * @throws {AuthenticationError} When app credentials are invalid or installation unauthorized
+   * @throws {ExternalServiceError} When GitHub API request fails
    */
   private async refreshInstallationToken(): Promise<void> {
     try {
@@ -145,7 +171,13 @@ export class GitHubApiClient {
   }
 
   /**
-   * Generate JWT for GitHub App authentication
+   * Generates JWT token for GitHub App authentication
+   * 
+   * Creates short-lived JWT using app's private key for authenticating
+   * installation token requests. Token is valid for 10 minutes.
+   * 
+   * @returns Signed JWT token for GitHub App authentication
+   * @throws {Error} When app ID or private key is missing or invalid
    */
   private generateAppJWT(): string {
     const payload = {
@@ -158,7 +190,12 @@ export class GitHubApiClient {
   }
 
   /**
-   * Ensure we have a valid token before making requests
+   * Ensures client has valid authentication token before API requests
+   * 
+   * Checks token expiration and refreshes proactively (5 minutes early)
+   * to prevent authentication failures during API calls.
+   * 
+   * @throws {AuthenticationError} When token refresh fails
    */
   private async ensureValidToken(): Promise<void> {
     if (!this.installationToken || Date.now() >= this.tokenExpiresAt - 300000) { // Refresh 5 min early
@@ -169,7 +206,19 @@ export class GitHubApiClient {
   // === REPOSITORY OPERATIONS ===
 
   /**
-   * List repositories accessible to the installation
+   * Retrieves all repositories accessible to the GitHub App installation
+   * 
+   * Lists repositories the app has been granted access to, including
+   * repository metadata, permissions, and configuration details.
+   * 
+   * @returns Array of repositories with metadata and access permissions
+   * @throws {AuthenticationError} When installation token is invalid
+   * @throws {ExternalServiceError} When GitHub API request fails
+   * 
+   * @example
+   * const repos = await client.listRepositories();
+   * console.log(`Found ${repos.length} accessible repositories`);
+   * const publicRepos = repos.filter(repo => !repo.private);
    */
   async listRepositories(): Promise<GitHubRepository[]> {
     return perf.measureAsync('github.listRepositories', async () => {
